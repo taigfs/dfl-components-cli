@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Search, Copy, Filter, Eye, Code, Users, Zap, Layout, ChevronDown } from 'lucide-react';
+import { Search, Copy, Filter, Eye, Code, Users, Zap, Layout, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -31,7 +31,7 @@ const SampleInput = () => (
   />
 );
 
-// Mock data structure
+// Mock data structure with file paths
 const mockComponents = [
   {
     id: '1',
@@ -40,6 +40,7 @@ const mockComponents = [
     category: 'UI' as const,
     tags: ['button', 'interactive', 'form'],
     version: '1.2.0',
+    filePath: 'src/components/ui/Button.tsx',
     code: `import React from 'react';
 
 interface ButtonProps {
@@ -90,6 +91,7 @@ export const Button: React.FC<ButtonProps> = ({
     category: 'UI' as const,
     tags: ['card', 'container', 'layout'],
     version: '1.1.0',
+    filePath: 'src/components/ui/Card.tsx',
     code: `import React from 'react';
 
 interface CardProps {
@@ -130,6 +132,7 @@ export const Card: React.FC<CardProps> = ({
     category: 'UI' as const,
     tags: ['input', 'form', 'validation'],
     version: '1.0.5',
+    filePath: 'src/components/ui/Input.tsx',
     code: `import React from 'react';
 
 interface InputProps {
@@ -186,6 +189,7 @@ export const Input: React.FC<InputProps> = ({
     category: 'Hooks' as const,
     tags: ['auth', 'hook', 'state-management'],
     version: '2.0.1',
+    filePath: 'src/hooks/useHybridAuth.ts',
     code: `import { useState, useEffect, useCallback } from 'react';
 
 interface User {
@@ -317,6 +321,7 @@ export const useHybridAuth = (): UseHybridAuthReturn => {
     category: 'Providers' as const,
     tags: ['auth', 'context', 'provider'],
     version: '1.3.0',
+    filePath: 'src/providers/AuthProvider.tsx',
     code: `import React, { createContext, useContext, ReactNode } from 'react';
 import { useHybridAuth } from '../hooks/useHybridAuth';
 
@@ -366,6 +371,7 @@ export const useAuth = (): AuthContextType => {
     category: 'Providers' as const,
     tags: ['feature-flags', 'context', 'provider'],
     version: '1.1.2',
+    filePath: 'src/providers/FeatureFlagProvider.tsx',
     code: `import React, { createContext, useContext, ReactNode, useState, useEffect } from 'react';
 
 interface FeatureFlags {
@@ -463,10 +469,12 @@ export const useFeatureFlags = (): FeatureFlagContextType => {
     category: 'Pages' as const,
     tags: ['auth', 'pages', 'forms'],
     version: '1.0.0',
+    filePath: 'src/pages/auth/',
     code: `// See individual page components for complete implementation`,
     subPages: [
       {
         name: 'Login Page',
+        filePath: 'src/pages/auth/LoginPage.tsx',
         code: `import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -554,6 +562,7 @@ export const LoginPage: React.FC = () => {
       },
       {
         name: 'Register Page',
+        filePath: 'src/pages/auth/RegisterPage.tsx',
         code: `import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -691,6 +700,7 @@ const ComponentHubApp: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedComponent, setSelectedComponent] = useState<Component | null>(null);
   const [selectedSubPage, setSelectedSubPage] = useState<string>('');
+  const [selectedComponents, setSelectedComponents] = useState<Set<string>>(new Set());
 
   const categories = ['all', 'UI', 'Hooks', 'Providers', 'Pages'];
 
@@ -701,12 +711,60 @@ const ComponentHubApp: React.FC = () => {
     return matchesSearch && matchesCategory;
   });
 
+  // Group components by category when "all" is selected
+  const groupedComponents = selectedCategory === 'all' 
+    ? categories.slice(1).reduce((acc, category) => {
+        const categoryComponents = filteredComponents.filter(comp => comp.category === category);
+        if (categoryComponents.length > 0) {
+          acc[category] = categoryComponents;
+        }
+        return acc;
+      }, {} as Record<string, Component[]))
+    : { [selectedCategory]: filteredComponents };
+
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
     toast({
       title: "Code copied!",
       description: "The component code has been copied to your clipboard.",
     });
+  };
+
+  const handleBulkCopy = () => {
+    const selectedComponentsData = mockComponents.filter(comp => 
+      selectedComponents.has(comp.id)
+    );
+
+    let clipboardContent = '';
+    
+    selectedComponentsData.forEach(component => {
+      if (component.subPages) {
+        component.subPages.forEach(subPage => {
+          clipboardContent += `**${subPage.filePath}**\n\`\`\`typescript\n${subPage.code}\n\`\`\`\n\n`;
+        });
+      } else {
+        clipboardContent += `**${component.filePath}**\n\`\`\`typescript\n${component.code}\n\`\`\`\n\n`;
+      }
+    });
+
+    navigator.clipboard.writeText(clipboardContent.trim());
+    
+    toast({
+      title: "Components copied!",
+      description: `${selectedComponents.size} components copied to clipboard in LLM format.`,
+    });
+    
+    setSelectedComponents(new Set());
+  };
+
+  const toggleComponentSelection = (componentId: string) => {
+    const newSelected = new Set(selectedComponents);
+    if (newSelected.has(componentId)) {
+      newSelected.delete(componentId);
+    } else {
+      newSelected.add(componentId);
+    }
+    setSelectedComponents(newSelected);
   };
 
   const openComponent = (component: Component) => {
@@ -736,6 +794,17 @@ const ComponentHubApp: React.FC = () => {
     return selectedComponent.previewComponent;
   };
 
+  const getCurrentFilePath = () => {
+    if (!selectedComponent) return '';
+    
+    if (selectedComponent.subPages && selectedSubPage) {
+      const subPage = selectedComponent.subPages.find(page => page.name === selectedSubPage);
+      return subPage?.filePath || selectedComponent.filePath;
+    }
+    
+    return selectedComponent.filePath;
+  };
+
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       {/* Header */}
@@ -750,6 +819,22 @@ const ComponentHubApp: React.FC = () => {
             </div>
             
             <div className="flex items-center space-x-4">
+              {selectedComponents.size > 0 && (
+                <div className="flex items-center space-x-2 bg-blue-900/30 border border-blue-700 rounded-lg px-3 py-2">
+                  <span className="text-blue-300 text-sm font-medium">
+                    {selectedComponents.size} selected
+                  </span>
+                  <Button
+                    onClick={handleBulkCopy}
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-700 h-7"
+                  >
+                    <Copy className="w-3 h-3 mr-1" />
+                    Copy
+                  </Button>
+                </div>
+              )}
+              
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
@@ -780,56 +865,87 @@ const ComponentHubApp: React.FC = () => {
 
       {/* Component Grid */}
       <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredComponents.map(component => (
-            <Card 
-              key={component.id}
-              className="bg-gray-900 border-gray-800 hover:border-gray-700 transition-all duration-200 cursor-pointer group hover:shadow-lg hover:shadow-blue-500/10"
-              onClick={() => openComponent(component)}
-            >
-              <div className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center space-x-2">
-                    <CategoryIcon category={component.category} />
-                    <h3 className="font-semibold text-white group-hover:text-blue-400 transition-colors">
-                      {component.name}
-                    </h3>
-                  </div>
-                  <span className="text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded">
-                    v{component.version}
-                  </span>
-                </div>
-                
-                <p className="text-gray-400 text-sm mb-4 line-clamp-2">
-                  {component.description}
-                </p>
-                
-                <div className="flex flex-wrap gap-1 mb-4">
-                  {component.tags.slice(0, 3).map(tag => (
-                    <span 
-                      key={tag}
-                      className="inline-block bg-gray-800 text-gray-300 text-xs px-2 py-1 rounded-full"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                  {component.tags.length > 3 && (
-                    <span className="text-gray-500 text-xs">+{component.tags.length - 3}</span>
-                  )}
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500 bg-gradient-to-r from-blue-500/20 to-purple-500/20 px-2 py-1 rounded">
-                    {component.category}
-                  </span>
-                  <Eye className="w-4 h-4 text-gray-500 group-hover:text-blue-400 transition-colors" />
-                </div>
+        {Object.entries(groupedComponents).map(([category, components]) => (
+          <div key={category} className="mb-8">
+            {selectedCategory === 'all' && (
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-gray-200 mb-3 flex items-center space-x-2">
+                  <CategoryIcon category={category as Component['category']} />
+                  <span>{category}</span>
+                </h2>
+                <div className="h-px bg-gradient-to-r from-gray-700 via-gray-600 to-transparent"></div>
               </div>
-            </Card>
-          ))}
-        </div>
+            )}
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {components.map(component => (
+                <Card 
+                  key={component.id}
+                  className="bg-gray-900 border-gray-800 hover:border-gray-700 transition-all duration-200 group hover:shadow-lg hover:shadow-blue-500/10 relative"
+                >
+                  <div className="absolute top-3 right-3 z-10">
+                    <div
+                      className={`w-5 h-5 rounded border-2 cursor-pointer flex items-center justify-center transition-colors ${
+                        selectedComponents.has(component.id)
+                          ? 'bg-blue-600 border-blue-600'
+                          : 'border-gray-600 hover:border-blue-500'
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleComponentSelection(component.id);
+                      }}
+                    >
+                      {selectedComponents.has(component.id) && (
+                        <Check className="w-3 h-3 text-white" />
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="p-5 cursor-pointer" onClick={() => openComponent(component)}>
+                    <div className="flex items-start justify-between mb-3 pr-8">
+                      <div className="flex items-center space-x-2">
+                        <CategoryIcon category={component.category} />
+                        <h3 className="font-semibold text-white group-hover:text-blue-400 transition-colors">
+                          {component.name}
+                        </h3>
+                      </div>
+                      <span className="text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded">
+                        v{component.version}
+                      </span>
+                    </div>
+                    
+                    <p className="text-gray-400 text-sm mb-4 line-clamp-2">
+                      {component.description}
+                    </p>
+                    
+                    <div className="flex flex-wrap gap-1 mb-4">
+                      {component.tags.slice(0, 3).map(tag => (
+                        <span 
+                          key={tag}
+                          className="inline-block bg-gray-800 text-gray-300 text-xs px-2 py-1 rounded-full"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                      {component.tags.length > 3 && (
+                        <span className="text-gray-500 text-xs">+{component.tags.length - 3}</span>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 bg-gradient-to-r from-blue-500/20 to-purple-500/20 px-2 py-1 rounded">
+                        {component.category}
+                      </span>
+                      <Eye className="w-4 h-4 text-gray-500 group-hover:text-blue-400 transition-colors" />
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        ))}
 
-        {filteredComponents.length === 0 && (
+        {Object.keys(groupedComponents).length === 0 && (
           <div className="text-center py-12">
             <div className="text-gray-500 mb-4">
               <Search className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -899,6 +1015,13 @@ const ComponentHubApp: React.FC = () => {
               
               {/* Metadata */}
               <div className="space-y-3">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-400 mb-1">File Path</h4>
+                  <p className="text-sm text-blue-300 font-mono bg-gray-800 px-2 py-1 rounded">
+                    {getCurrentFilePath()}
+                  </p>
+                </div>
+                
                 <div>
                   <h4 className="text-sm font-medium text-gray-400 mb-1">Description</h4>
                   <p className="text-sm text-gray-300">{selectedComponent?.description}</p>
